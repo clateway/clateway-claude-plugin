@@ -1,0 +1,11 @@
+{
+  "name": "clateway",
+  "owner": { "name": "Clateway", "url": "https://clateway.ai" },
+  "plugins": [
+    {
+      "name": "clateway",
+      "source": "./clateway",
+      "description": "Export Claude Code skills as Clateway AI agents: scan, test in a real sandbox, deploy."
+    }
+  ]
+}
