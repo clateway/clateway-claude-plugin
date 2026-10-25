@@ -1,5 +1,6 @@
 {
   "name": "clateway",
+  "description": "Clateway plugins for Claude Code: export your skills as Clateway AI agents.",
   "owner": { "name": "Clateway", "url": "https://clateway.ai" },
   "plugins": [
     {

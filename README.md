@@ -14,14 +14,34 @@ tested in a real Clateway agent sandbox before anyone relies on it.
 
 ## Install
 
-In Claude Code:
+Run these in a **terminal (shell), not inside a Claude Code session**:
 
-```
-/plugin marketplace add clateway/clateway-claude-plugin
-/plugin install clateway@clateway
+```bash
+claude plugin marketplace add clateway/clateway-claude-plugin
+claude plugin install clateway@clateway
 ```
 
-Restart Claude Code if `/clateway-export` does not show up. Updates: `/plugin marketplace update clateway`.
+Then start `claude` in your project. `/clateway-export` is available; check with `claude plugin list`, which shows
+`clateway@clateway` as enabled.
+
+Typing `/plugin marketplace add …` in a chat answers "/plugin isn't available in this environment" wherever the
+plugin browser does not exist, such as non-interactive runs (`claude -p`) and cloud sessions. Use the commands above
+instead. Other places:
+
+- **Claude desktop app** (local session): **+** next to the prompt box → **Add plugins** → add the marketplace
+  `clateway/clateway-claude-plugin`.
+- **VS Code:** `/plugins` → **Marketplaces** → add `clateway/clateway-claude-plugin`.
+- **Cloud sessions** (claude.ai/code, mobile, desktop cloud): plugins are not loaded there, not even ones a
+  repository turns on in `.claude/settings.json`. Run the export from a terminal on your own machine.
+
+Updates, also in a terminal:
+
+```bash
+claude plugin marketplace update clateway
+claude plugin update clateway@clateway
+```
+
+Restart Claude Code afterwards.
 
 ## Use
 
@@ -31,7 +51,8 @@ Restart Claude Code if `/clateway-export` does not show up. Updates: `/plugin ma
 2. **Export a skill:** `/clateway-export company-gif` (any skill in `.claude/commands`, `.claude/skills` or
    `~/.claude/commands`).
 3. **Only the scan:**
-   `node <plugin folder>/clateway/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
+   `node ~/.claude/plugins/cache/clateway/clateway/<version>/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
+   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.0.0`)
 
 Secrets are never put in a package: the agent's owner enters their values in Clateway after the deploy (agent →
 Teamwork → Sandbox → Secrets), where they are stored encrypted.
