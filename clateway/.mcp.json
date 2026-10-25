@@ -2,7 +2,7 @@
   "mcpServers": {
     "clateway": {
       "type": "http",
-      "url": "https://auth.clateway.ai/functions/v1/tenant-api-gateway/mcp"
+      "url": "https://backend.clateway.ai/functions/v1/tenant-api-gateway/mcp"
     }
   }
 }

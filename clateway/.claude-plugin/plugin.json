@@ -1,6 +1,6 @@
 {
   "name": "clateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Turn your Claude Code skills into Clateway AI agents: scan what a skill really needs, test it in a real Clateway agent sandbox and deploy it.",
   "author": { "name": "Clateway", "url": "https://clateway.ai" },
   "homepage": "https://clateway.ai/ai-agents",
