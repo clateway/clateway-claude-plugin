@@ -12,6 +12,14 @@ tested in a real Clateway agent sandbox before anyone relies on it.
 3. **Tests** it once in a real Clateway sandbox (test mode, nothing changes), fixes what fails and tests again.
 4. **Deploys** it as an agent on your company's AI team (clateway.ai/ai-agents), after asking you.
 
+`/clateway-zip <skill>` does the scan and the package without signing in to Clateway and writes a zip (the skill
+folder plus the finished package) to upload yourself: clateway.ai → AI agents → Hire an agent → Import from Claude
+Code → **Upload zip or file**, then **Test in a sandbox** and **Deploy agent**.
+
+No plugin at all? Zip the skill folder (with its `SKILL.md`, scripts and files) and upload that: Clateway reads the
+instructions, scripts, files, packages, hosts and secrets from it. The plugin's scan makes a skill portable first
+(local paths, inline code, programs the sandbox lacks), so its agents fail less often.
+
 ## Install
 
 Run these in a **terminal (shell), not inside a Claude Code session**:
@@ -50,9 +58,12 @@ Restart Claude Code afterwards.
    tools there.
 2. **Export a skill:** `/clateway-export company-gif` (any skill in `.claude/commands`, `.claude/skills` or
    `~/.claude/commands`).
-3. **Only the scan:**
+3. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
+4. **Only the scan:**
    `node ~/.claude/plugins/cache/clateway/clateway/<version>/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
-   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.0.0`)
+   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.1.0`)
+5. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --out <skill>.zip` (add `--package <file>` to
+   put a finished package in it).
 
 Secrets are never put in a package: the agent's owner enters their values in Clateway after the deploy (agent →
 Teamwork → Sandbox → Secrets), where they are stored encrypted.

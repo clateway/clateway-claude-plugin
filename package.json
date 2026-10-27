@@ -4,7 +4,9 @@
   "type": "module",
   "description": "Clateway plugin for Claude Code",
   "scripts": {
-    "test": "node --test test/scan-skill.test.mjs"
+    "test": "node --test test/scan-skill.test.mjs test/zip-skill.test.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
