@@ -13,7 +13,7 @@ The Clateway MCP server of this plugin (`clateway`) must be connected: sign in w
 `agents_test_skill_package`, `agents_get_skill_test` and `agents_setup_integration`.
 
 Not connected, or the `agents_*` tools are switched off for the company? Do steps 1–3, then pack the
-skill with `/clateway-zip` (step 3 there) and tell the person to upload the zip on clateway.ai: AI agents →
+skill with `/clateway-zip` (step 5 there) and tell the person to upload the zip on clateway.ai: AI agents →
 Hire an agent → Import from Claude Code → Upload zip or file, then Test in a sandbox and Deploy agent.
 
 ### 1. Find the skill
@@ -94,4 +94,4 @@ When the test passes, `agents_deploy_skill_package` with `{ package }`. Show the
 secrets the person still has to enter (agent → Teamwork → Sandbox → Secrets) and the integrations
 that need setting up. Save the final package next to the skill as `<name>.clateway-skill.json`. If the
 person also wants a file to share or upload elsewhere, make the zip with
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/zip-skill.mjs" <skill folder> --package <name>.clateway-skill.json`.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/zip-skill.mjs" <skill folder> --root . --package <name>.clateway-skill.json` (it adds the scripts and files from elsewhere in the project and checks the package).

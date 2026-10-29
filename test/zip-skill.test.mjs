@@ -2,33 +2,9 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import zlib from 'node:zlib';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { collectSkill, crc32, makeZip, zipSkill } from '../clateway/scripts/zip-skill.mjs';
-
-/** Reads a zip back (central directory, then each entry), as Clateway's upload does with JSZip. */
-function readZip(buf) {
-  const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-  const count = buf.readUInt16LE(end + 10);
-  let p = buf.readUInt32LE(end + 16);
-  const out = {};
-  for (let i = 0; i < count; i++) {
-    const method = buf.readUInt16LE(p + 10);
-    const crc = buf.readUInt32LE(p + 16);
-    const size = buf.readUInt32LE(p + 20);
-    const nameLen = buf.readUInt16LE(p + 28);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8');
-    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    const body = buf.subarray(start, start + size);
-    const data = method === 8 ? zlib.inflateRawSync(body) : Buffer.from(body);
-    assert.equal(crc32(data), crc, `crc of ${name}`);
-    out[name] = data;
-    p += 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
-  }
-  return out;
-}
+import { checkPackage, collectSkill, holdsSecret, makeZip, readZip, relatedSkills, zipSkill } from '../clateway/scripts/zip-skill.mjs';
 
 function skillFolder() {
   const root = mkdtempSync(join(tmpdir(), 'zip-skill-'));
@@ -47,6 +23,16 @@ function skillFolder() {
     writeFileSync(join(dir, p), c);
   }
   return { root, dir };
+}
+
+function goodPackage() {
+  return {
+    format: 'clateway-skill-package', version: '1.0',
+    skill: { key: 'company_gif', name: 'Company GIF', description: 'GIF' },
+    agent: { name: 'Gif', roleTitle: 'GIF maker', mission: 'GIFs', instructions: 'Run scripts/render.py' },
+    scripts: [{ path: 'scripts/render.py', runtime: 'python', entrypoint: true, content: 'cHJpbnQoMSk=' }],
+    evals: [{ task: 'Make a GIF', expect_files: ['.gif'] }],
+  };
 }
 
 describe('zip-skill', () => {
@@ -72,9 +58,9 @@ describe('zip-skill', () => {
   it('adds the package next to the files when given', () => {
     const { root, dir } = skillFolder();
     const pkg = join(root, 'pkg.json');
-    writeFileSync(pkg, JSON.stringify({ format: 'clateway-skill-package', version: '1.0' }));
+    writeFileSync(pkg, JSON.stringify(goodPackage()));
     const out = join(root, 'out.zip');
-    const r = zipSkill({ target: dir, pkg, out });
+    const r = zipSkill({ target: dir, pkg, out, root, scan: false });
     assert.equal(r.with_package, true);
     const back = readZip(readFileSync(out));
     assert.ok(back['company-gif/company-gif.clateway-skill.json']);
@@ -82,14 +68,58 @@ describe('zip-skill', () => {
     assert.ok(!Object.keys(back).some((n) => n.includes('.env') || n.includes('node_modules')));
     const bad = join(root, 'bad.json');
     writeFileSync(bad, '{"x":1}');
-    assert.throws(() => zipSkill({ target: dir, pkg: bad, out }), /not a Clateway skill package/);
+    assert.throws(() => zipSkill({ target: dir, pkg: bad, out, root, scan: false }), /not a Clateway skill package/);
+    writeFileSync(bad, JSON.stringify({ ...goodPackage(), agent: { name: 'TODO', instructions: 'x' } }));
+    assert.throws(() => zipSkill({ target: dir, pkg: bad, out, root, scan: false }), /Still TODO.*agent\.name/);
   });
 
   it('packs a single command file as it is', () => {
     const { root } = skillFolder();
     const md = join(root, 'weekly.md');
     writeFileSync(md, '# Weekly\nDo it');
-    const r = zipSkill({ target: md, out: join(root, 'w.zip') });
+    const r = zipSkill({ target: md, out: join(root, 'w.zip'), root });
     assert.deepEqual(r.files, ['weekly/weekly.md']);
+  });
+
+  it('adds the scripts and files it uses from elsewhere in the project, and skills it calls', () => {
+    const root = mkdtempSync(join(tmpdir(), 'zip-project-'));
+    const put = (p, c) => { mkdirSync(join(root, p, '..'), { recursive: true }); writeFileSync(join(root, p), c); };
+    put('.claude/skills/deck/SKILL.md', '# Deck\nRun `node scripts/demo/make-deck.mjs`, then /brand-check.');
+    put('scripts/demo/make-deck.mjs', "import { x } from './lib.mjs';\nconst t = JSON.parse(fs.readFileSync('assets/theme.json'));");
+    put('scripts/demo/lib.mjs', 'export const x = 1;');
+    put('assets/theme.json', '{}');
+    put('.claude/commands/brand-check.md', '# Brand check');
+    put('scripts/demo/leak.json', '{"k":"sk-ant-abcdefghijklmnopqrstuvwxyz0123"}');
+    const r = zipSkill({ target: join(root, '.claude/skills/deck'), out: join(root, 'deck.zip'), root });
+    const back = readZip(readFileSync(r.zip));
+    for (const n of ['deck/SKILL.md', 'deck/scripts/demo/make-deck.mjs', 'deck/scripts/demo/lib.mjs', 'deck/assets/theme.json', 'deck/references/brand-check.md']) assert.ok(back[n], n);
+    assert.deepEqual(r.related_skills, ['brand-check']);
+    assert.ok(r.verified);
+    assert.ok(r.warnings.some((w) => /No finished package/.test(w)));
+  });
+
+  it('never packs a file holding a key', () => {
+    assert.equal(holdsSecret(Buffer.from('token = "ghp_' + 'a'.repeat(36) + '"')), true);
+    assert.equal(holdsSecret(Buffer.from('const key = process.env.OPENAI_API_KEY')), false);
+    const { root, dir } = skillFolder();
+    writeFileSync(join(dir, 'data/config.json'), '{"key":"AKIA' + 'ABCDEFGHIJKLMNOP' + '"}');
+    const r = zipSkill({ target: dir, out: join(root, 'k.zip'), root, scan: false });
+    assert.ok(!r.files.includes('company-gif/data/config.json'));
+    assert.ok(r.skipped.some((s) => s.path === 'data/config.json'));
+  });
+
+  it('checks a package against the import limits', () => {
+    assert.deepEqual(checkPackage(goodPackage()), []);
+    const many = { ...goodPackage(), files: Array.from({ length: 21 }, (_, i) => ({ path: `f${i}.txt`, content: 'eA==' })) };
+    assert.ok(checkPackage(many).some((p) => /21 files/.test(p)));
+    assert.ok(checkPackage({ ...goodPackage(), evals: [] }).some((p) => /No evals/.test(p)));
+    assert.ok(checkPackage({ ...goodPackage(), secrets_needed: [{ name: 'X', value: 'y' }] }).some((p) => /holds a value/.test(p)));
+  });
+
+  it('finds the skills a skill calls', () => {
+    const root = mkdtempSync(join(tmpdir(), 'zip-related-'));
+    mkdirSync(join(root, '.claude/commands'), { recursive: true });
+    writeFileSync(join(root, '.claude/commands/other.md'), '#');
+    assert.deepEqual(relatedSkills('Then run /other and /missing.', root, '/x').map((r) => r.name), ['other']);
   });
 });

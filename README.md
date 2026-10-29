@@ -12,8 +12,10 @@ tested in a real Clateway agent sandbox before anyone relies on it.
 3. **Tests** it once in a real Clateway sandbox (test mode, nothing changes), fixes what fails and tests again.
 4. **Deploys** it as an agent on your company's AI team (clateway.ai/ai-agents), after asking you.
 
-`/clateway-zip <skill>` does the scan and the package without signing in to Clateway and writes a zip (the skill
-folder plus the finished package) to upload yourself: clateway.ai → AI agents → Hire an agent → Import from Claude
+`/clateway-zip <skill>` does the scan and the package without signing in to Clateway and writes **one complete
+zip**: the skill folder, every script and file it uses from elsewhere in the project (at their project path), the
+skills it calls (as `references/<name>.md`) and the finished package, checked against Clateway's limits and read
+back to verify. Files holding something like a key are never packed. Upload it yourself: clateway.ai → AI agents → Hire an agent → Import from Claude
 Code → **Upload zip or file**, then **Test in a sandbox** and **Deploy agent**.
 
 No plugin at all? Zip the skill folder (with its `SKILL.md`, scripts and files) and upload that: Clateway reads the
@@ -61,9 +63,9 @@ Restart Claude Code afterwards.
 3. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
 4. **Only the scan:**
    `node ~/.claude/plugins/cache/clateway/clateway/<version>/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
-   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.1.0`)
-5. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --out <skill>.zip` (add `--package <file>` to
-   put a finished package in it).
+   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.2.0`)
+5. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --root . --out <skill>.zip` (add
+   `--package <file>` to put a finished package in it, `--no-scan` to pack only the skill folder).
 
 Secrets are never put in a package: the agent's owner enters their values in Clateway after the deploy (agent →
 Teamwork → Sandbox → Secrets), where they are stored encrypted.
