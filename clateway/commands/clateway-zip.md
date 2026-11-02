@@ -35,7 +35,7 @@ Then complete what a scanner cannot see, by reading the skill and its scripts yo
 | Reference markdown next to it (guides, examples, style rules) | in the skill folder; the package keeps it in `instructions` or `files` |
 | Every script it runs, and every script those import | `scripts` (under `scripts/`) or `files` (at their project path) |
 | Every file a script reads: configs, templates, prompts, fonts, images, sample data, JSON schemas | `files`, at the path the script reads it from |
-| `requirements.txt` / `package.json` of the scripts | `requirements.python_packages` / `node_packages` |
+| `requirements.txt` / `package.json` of the scripts | `requirements.python_packages` / `node_packages`, with the exact version used (`name@1.2.3`, `name==1.2.3`; the scanner reads lockfiles and node_modules, pin the rest with `npm ls` / `pip show`) |
 | Code shown only inline (fenced blocks run by hand) | turned into real script files in `scripts` |
 | Programs it starts (ffmpeg, pandoc, a browser, soffice) | `requirements.tools`; check them against the sandbox list in `/clateway-export` |
 | Hosts it calls (APIs, fonts, CDNs) | `requirements.domains`, network `allowlist` |
@@ -61,7 +61,9 @@ Fill in every `TODO` in `/tmp/clateway-package.json` as described in step 3 of `
 `skill` (key, name, description, category), `agent` (name, roleTitle, persona, mission, instructions
 with exactly how to run the entrypoint and with which input), `secrets_needed`, `integrations_needed`,
 `memory_seeds`, `tasks` and **1–3 `evals`** (a small real run with `must_include` / `expect_files`).
-Mark one script `"entrypoint": true`.
+Mark one script `"entrypoint": true`. End `agent.instructions` with the scanner's `dependencies_markdown`
+("Packages used": every npm / pip package, the version it was run with, whether the sandbox has it, and
+the install line), so whoever imports the agent sees exactly what it uses.
 
 Limits (the zip refuses a package over them): 20 scripts (~375 KB each), 20 files (~1.5 MB each),
 ~9 MB of scripts and files together, instructions up to 100,000 characters, 50 memory seeds, zip up to
@@ -75,16 +77,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/zip-skill.mjs" <skill folder or .md> --root 
 
 The zipper checks the package (no TODO, limits, an entrypoint, evals, no secret values), scans the skill
 again and adds the scripts and files it uses from elsewhere in the project at their project path, the
-skills it calls as `references/<name>.md`, then reads the zip back to verify every file. It leaves out
+skills it calls as `references/<name>.md`, a `DEPENDENCIES.md` with every package, its version and the
+`npm install` / `pip install` line (plus a `package.json` / `requirements.txt` with those versions when the
+skill folder has none, since lockfiles stay out), then reads the zip back to verify every file. It leaves out
 secrets (`.env`, keys, any file that holds something like a key), `node_modules`, caches and lockfiles.
 
-Read the JSON report: `added_from_project`, `related_skills`, `skipped` and `warnings`. A file in
+Read the JSON report: `added_from_project`, `related_skills`, `dependencies` (each `exact`?), `skipped`
+and `warnings`. A file in
 `skipped` with "holds a key" means a secret is written in a file: move it to an environment variable
 and list it in `secrets_needed`. Fix and zip again until there are no warnings you cannot explain.
 
 ### 6. Tell the person
 
-Give the full path of the zip, what it holds (scripts, files, references, package) and the next steps:
+Give the full path of the zip, what it holds (scripts, files, references, package), the npm / pip
+packages with their versions (from `DEPENDENCIES.md`) and the next steps:
 1. clateway.ai → AI agents → Hire an agent → Import from Claude Code → **Upload zip or file**.
 2. Check what Clateway found, then **Test in a sandbox** before **Deploy agent**.
 3. Enter the secrets the package names (agent → Teamwork → Sandbox → Secrets), with the hosts they are for.

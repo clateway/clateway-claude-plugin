@@ -5,7 +5,7 @@
  * Reads a Claude Code skill (.claude/commands/<name>.md or a SKILL.md) and follows every script it
  * uses, so a Clateway agent package lists exactly what the skill needs instead of what a model
  * remembers: script files and the files they read, npm / pip packages with the versions of the
- * project's lockfiles, programs the scripts start, environment variables they read (secrets), and
+ * project's lockfiles (else the installed version), a readable "Packages used" overview, programs the scripts start, environment variables they read (secrets), and
  * paths that only exist on this machine. It compares all of that with what the Clateway agent
  * sandbox has (sandbox-packages.json, a copy of agentcore/workspace/sandbox-packages.json).
  *
@@ -44,7 +44,13 @@ const BINARY_ALIASES = { python: 'python3', pip3: 'pip', 'google-chrome': 'chrom
 export function loadSandbox(file = join(HERE, 'sandbox-packages.json')) {
   const j = JSON.parse(readFileSync(file, 'utf8'));
   // "office" (LibreOffice) is only in the full sandbox image: usable, but the package then needs that image.
-  return { tools: new Set(j.tools), officeTools: new Set(j.office?.tools ?? []), npm: new Set(Object.keys(j.npm)), pip: new Set(Object.keys(j.pip).map((x) => x.toLowerCase())) };
+  return {
+    tools: new Set(j.tools), officeTools: new Set(j.office?.tools ?? []),
+    npm: new Set(Object.keys(j.npm)), pip: new Set(Object.keys(j.pip).map((x) => x.toLowerCase())),
+    // Versions in the image, for the "Packages used" overview.
+    npmVersions: Object.fromEntries(Object.entries(j.npm).map(([n, v]) => [n, String(v ?? '')])),
+    pipVersions: Object.fromEntries(Object.entries(j.pip).map(([n, v]) => [n.toLowerCase(), String(v ?? '')])),
+  };
 }
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length;
@@ -175,25 +181,115 @@ export function pathLiteralsIn(src) {
 
 const isLocalOnly = (p) => /^(~|\/Users\/|\/home\/|\/opt\/|[A-Za-z]:\\|<project>|<repo>)/.test(p) || /(^|\/)node_modules\//.test(p);
 
-function lockVersions(root) {
-  const npm = {}, pip = {};
-  try {
-    const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
-    for (const [k, v] of Object.entries(lock.packages ?? {})) if (k.startsWith('node_modules/') && v?.version) npm[k.slice('node_modules/'.length)] ??= v.version;
-  } catch { /* no lockfile */ }
-  try {
-    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-    for (const [k, v] of Object.entries({ ...(pkg.devDependencies ?? {}), ...(pkg.dependencies ?? {}) })) npm[k] ??= String(v);
-  } catch { /* no package.json */ }
-  for (const f of ['requirements.txt', 'requirements-dev.txt']) {
+/**
+ * Versions of the npm / pip packages, from the skill's own folder first, then the project: exact
+ * versions of a lockfile, else the installed node_modules/<name>, else the package.json range.
+ */
+function lockVersions(dirs) {
+  const npm = {}, pip = {}, npmSource = {}, pipSource = {};
+  const setNpm = (n, v, source) => { if (v && !(n in npm)) { npm[n] = String(v); npmSource[n] = source; } };
+  for (const dir of dirs) {
     try {
-      for (const line of readFileSync(join(root, f), 'utf8').split('\n')) {
-        const m = /^\s*([A-Za-z0-9][\w.-]*)\s*(==|>=|~=)?\s*([\w.*]+)?/.exec(line);
-        if (m && !line.trim().startsWith('#')) pip[m[1].toLowerCase()] ??= m[2] ? `${m[2]}${m[3]}` : '';
-      }
-    } catch { /* none */ }
+      const lock = JSON.parse(readFileSync(join(dir, 'package-lock.json'), 'utf8'));
+      for (const [k, v] of Object.entries(lock.packages ?? {})) if (/^node_modules\/(@[^/]+\/)?[^/]+$/.test(k) && v?.version) setNpm(k.slice('node_modules/'.length), v.version, 'package-lock.json');
+      for (const [k, v] of Object.entries(lock.dependencies ?? {})) setNpm(k, v?.version, 'package-lock.json');
+    } catch { /* no lockfile */ }
   }
-  return { npm, pip };
+  const ranges = {};
+  for (const dir of dirs) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      for (const [k, v] of Object.entries({ ...(pkg.devDependencies ?? {}), ...(pkg.dependencies ?? {}) })) ranges[k] ??= String(v);
+    } catch { /* no package.json */ }
+  }
+  // A range (^9.0.0) says little: the version installed here is what the skill was run with.
+  const installed = (n) => {
+    for (const dir of dirs) {
+      try { return JSON.parse(readFileSync(join(dir, 'node_modules', n, 'package.json'), 'utf8')).version ?? null; } catch { /* not installed */ }
+    }
+    return null;
+  };
+  for (const dir of dirs) {
+    for (const f of ['requirements.txt', 'requirements-dev.txt']) {
+      try {
+        for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
+          const m = /^\s*([A-Za-z0-9][\w.-]*)\s*(==|>=|~=)?\s*([\w.*]+)?/.exec(line);
+          if (m && !line.trim().startsWith('#') && !(m[1].toLowerCase() in pip)) { pip[m[1].toLowerCase()] = m[2] ? `${m[2]}${m[3]}` : ''; pipSource[m[1].toLowerCase()] = f; }
+        }
+      } catch { /* none */ }
+    }
+  }
+  return {
+    npm, pip, npmSource, pipSource,
+    npmVersion: (n) => (n in npm ? npm[n] : installed(n) ? (setNpm(n, installed(n), 'node_modules'), npm[n]) : ranges[n] ? (setNpm(n, ranges[n], 'package.json'), npm[n]) : ''),
+  };
+}
+
+const exactVersion = (v) => /^\d[\w.+-]*$/.test(v ?? '');
+
+/**
+ * One row per package the skill uses: the version it was run with here, whether that is exact, the
+ * version in the Clateway sandbox image (null = installed at sandbox start) and how to install it. Pure.
+ */
+export function dependencyList(packages, sandbox, sources = {}) {
+  const rows = [];
+  for (const [name, version] of Object.entries(packages.npm ?? {})) {
+    const inImage = sandbox.npm.has(name);
+    const clean = (version ?? '').replace(/^[\^~=]/, '');
+    rows.push({
+      ecosystem: 'npm', name, version: version ?? '', exact: exactVersion(version), source: sources.npm?.[name] ?? '',
+      sandbox_version: inImage ? (sandbox.npmVersions?.[name] ?? '') : null,
+      install: clean && /^\d/.test(clean) ? `${name}@${clean}` : name,
+    });
+  }
+  for (const [name, version] of Object.entries(packages.pip ?? {})) {
+    const inImage = sandbox.pip.has(name);
+    const v = version ?? '';
+    rows.push({
+      ecosystem: 'pip', name, version: v, exact: /^==\d/.test(v) || exactVersion(v), source: sources.pip?.[name] ?? '',
+      sandbox_version: inImage ? (sandbox.pipVersions?.[name] ?? '') : null,
+      install: v ? `${name}${/^\d/.test(v) ? '==' : ''}${v}` : name,
+    });
+  }
+  return rows;
+}
+
+/** The "Packages used" section for the agent's instructions and DEPENDENCIES.md. Pure. */
+export function dependenciesMarkdown(rows) {
+  if (!rows.length) return '## Packages used\n\nThe scripts use no npm or pip packages (only Node / Python built-ins).\n';
+  const cell = (s) => String(s || '–').replace(/\|/g, '\\|');
+  const lines = [
+    '## Packages used',
+    '',
+    'The versions the skill was built and tested with. Packages marked "in the sandbox" are preinstalled in the Clateway sandbox (no network needed); the others are installed at sandbox start from `requirements.node_packages` / `python_packages`.',
+    '',
+    '| Package | Type | Version used | Clateway sandbox |',
+    '| --- | --- | --- | --- |',
+    ...rows.map((r) => `| ${cell(r.name)} | ${r.ecosystem} | ${cell(r.version)}${r.version && !r.exact ? ' (range, not exact)' : ''} | ${r.sandbox_version === null ? 'installed at start' : `in the sandbox${r.sandbox_version ? ` (${cell(r.sandbox_version)})` : ''}`} |`),
+    '',
+  ];
+  const npm = rows.filter((r) => r.ecosystem === 'npm'), pip = rows.filter((r) => r.ecosystem === 'pip');
+  lines.push('Install them elsewhere with:', '', '```bash');
+  if (npm.length) lines.push(`npm install ${npm.map((r) => r.install).join(' ')}`);
+  if (pip.length) lines.push(`pip install ${pip.map((r) => r.install).join(' ')}`);
+  lines.push('```', '');
+  const loose = rows.filter((r) => !r.exact);
+  if (loose.length) lines.push(`No exact version found for: ${loose.map((r) => r.name).join(', ')}. Pin them (npm ls / pip freeze) if the skill depends on a specific version.`, '');
+  return lines.join('\n');
+}
+
+/** A package.json with the exact npm versions, for a zip whose skill folder has none. Pure. */
+export function dependenciesPackageJson(rows, name) {
+  const npm = rows.filter((r) => r.ecosystem === 'npm');
+  if (!npm.length) return null;
+  const deps = Object.fromEntries(npm.map((r) => [r.name, r.version ? r.version.replace(/^=/, '') : '*']));
+  return `${JSON.stringify({ name: String(name).toLowerCase().replace(/[^a-z0-9._-]+/g, '-'), private: true, type: 'module', dependencies: deps }, null, 2)}\n`;
+}
+
+/** A requirements.txt with the pip versions, for a zip whose skill folder has none. Pure. */
+export function dependenciesRequirementsTxt(rows) {
+  const pip = rows.filter((r) => r.ecosystem === 'pip');
+  return pip.length ? `${pip.map((r) => r.install).join('\n')}\n` : null;
 }
 
 function resolveFile(base, spec, kind) {
@@ -214,7 +310,7 @@ export function scanSkill(skillPath, opts = {}) {
     scripts: [], files: [], packages: { npm: {}, pip: {} }, binaries: [], env_vars: [], hosts: [],
     local_paths: [], missing_files: [], skipped: [], warnings: [],
   };
-  const versions = lockVersions(root);
+  const versions = lockVersions([...new Set([dirname(resolve(skillPath)), root])]);
   const seen = new Set();
   const queue = [];
   const inRoot = (abs) => !relative(root, abs).startsWith('..') && !isAbsolute(relative(root, abs));
@@ -305,8 +401,10 @@ export function scanSkill(skillPath, opts = {}) {
   report.hosts = [...hosts].sort();
   const seenLocal = new Set();
   report.local_paths = report.local_paths.filter((l) => { const k = `${l.file}:${l.line}:${l.value}`; return !seenLocal.has(k) && seenLocal.add(k); });
-  for (const n of [...npm].sort()) report.packages.npm[n] = versions.npm[n] ?? '';
+  for (const n of [...npm].sort()) report.packages.npm[n] = versions.npmVersion(n);
   for (const n of [...pip].sort()) report.packages.pip[n] = versions.pip[n] ?? '';
+  report.dependencies = dependencyList(report.packages, sandbox, { npm: versions.npmSource, pip: versions.pipSource });
+  report.dependencies_markdown = dependenciesMarkdown(report.dependencies);
 
   const runtimes = new Set([...report.scripts.map((s) => s.runtime), ...[...blockKinds].filter((k) => k !== 'bash')]);
   const needed = new Set([...report.binaries, ...(runtimes.has('node') || runtimes.has('typescript') ? ['node'] : []), ...(runtimes.has('python') ? ['python3'] : [])]);
@@ -329,13 +427,15 @@ export function scanSkill(skillPath, opts = {}) {
     network: report.hosts.length ? 'allowlist' : npmToInstall.length || pipToInstall.length ? 'registries' : 'none',
     domains: report.hosts,
     tools: [...needed].sort(),
-    node_packages: Object.entries(report.packages.npm).map(([n, v]) => (v && !sandbox.npm.has(n) ? `${n}@${v.replace(/^[\^~]/, '')}` : n)),
+    node_packages: Object.entries(report.packages.npm).map(([n, v]) => (v && !sandbox.npm.has(n) && /^\d/.test(v.replace(/^[\^~=]/, '')) ? `${n}@${v.replace(/^[\^~=]/, '')}` : n)),
     python_packages: Object.entries(report.packages.pip).map(([n, v]) => (v && !sandbox.pip.has(n) ? `${n}${/^[0-9]/.test(v) ? '==' : ''}${v}` : n)),
   };
   report.secrets_needed = report.env_vars.map((name) => ({ name, description: '', domains: [], required: true }));
   if (fullImage) report.warnings.push('Uses LibreOffice (soffice): runs only where the platform offers the full sandbox image. Convert with pandoc, docx / pptxgenjs or python-docx / python-pptx instead if you can.');
   if (missingTools.length) report.warnings.push(`Not in the Clateway sandbox and not installable by the agent: ${missingTools.join(', ')}. Use another tool or an npm / pip package that bundles it.`);
   if (report.local_paths.length) report.warnings.push('Paths that only exist on this machine: make them inputs or files in the package.');
+  const unpinned = report.dependencies.filter((d) => d.sandbox_version === null && !d.exact).map((d) => d.name);
+  if (unpinned.length) report.warnings.push(`Installed at sandbox start without an exact version: ${unpinned.join(', ')}. Pin the version the skill was tested with (npm ls <name> / pip show <name>) in requirements.`);
   if (report.hosts.length && (npmToInstall.length || pipToInstall.length)) report.warnings.push('The code reaches hosts and also needs packages installed: list the packages so the image or the agent settings carry them, or add the registry hosts.');
   return report;
 }
@@ -349,7 +449,7 @@ export function packageSkeleton(report, root, skillKey) {
     format: 'clateway-skill-package',
     version: '1.0',
     skill: { key: skillKey, name: 'TODO', description: 'TODO' },
-    agent: { name: 'TODO', roleTitle: 'TODO', mission: 'TODO', instructions: 'TODO: the skill adapted for autonomous work; run the entrypoint as shown below', capabilities: ['sandbox'] },
+    agent: { name: 'TODO', roleTitle: 'TODO', mission: 'TODO', instructions: `TODO: the skill adapted for autonomous work; run the entrypoint as shown below. Keep this section at the end:\n\n${report.dependencies_markdown ?? ''}`, capabilities: ['sandbox'] },
     // Scripts under scripts/ keep their path in /workspace/scripts; others travel as files at their own
     // path, so the project's layout (and relative paths between files) is the same in /workspace.
     scripts: report.scripts.filter((s) => underScripts(s.path)).map((s) => ({ path: s.path, runtime: s.runtime, entrypoint: s.entrypoint, content: b64(resolve(root, s.path)) })),

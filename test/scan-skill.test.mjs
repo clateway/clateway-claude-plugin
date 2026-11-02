@@ -61,6 +61,20 @@ describe('a skill with scripts', () => {
     assert.deepEqual(report.sandbox.pip_to_install, ['rich']);
     assert.ok(report.requirements.node_packages.includes('left-pad@1.3.0'));
   });
+  it('lists every package with its version, the sandbox version and how to install it', () => {
+    const docx = report.dependencies.find((d) => d.name === 'docx');
+    assert.equal(docx.version, '9.1.0');
+    assert.equal(docx.exact, true);
+    assert.equal(docx.source, 'package-lock.json');
+    assert.equal(docx.install, 'docx@9.1.0');
+    const rich = report.dependencies.find((d) => d.name === 'rich');
+    assert.equal(rich.install, 'rich==13.9.2');
+    assert.equal(rich.sandbox_version, null);
+    assert.match(report.dependencies_markdown, /## Packages used/);
+    assert.match(report.dependencies_markdown, /npm install docx@9\.1\.0 left-pad@1\.3\.0/);
+    assert.match(report.dependencies_markdown, /pip install matplotlib rich==13\.9\.2/);
+    assert.match(report.dependencies_markdown, /No exact version found for: matplotlib/);
+  });
   it('finds programs, secrets, hosts and local-only paths', () => {
     assert.deepEqual(report.binaries, ['pandoc', 'weird-tool']);
     assert.deepEqual(report.sandbox.missing_tools, ['weird-tool']);

@@ -31,7 +31,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/scan-skill.mjs" <skill file> --root . --pack
 
 It follows every script and the files they read and reports, as JSON:
 - `scripts` / `files`: what the package must carry (written base64-encoded into the skeleton)
-- `packages`: npm / pip packages with the versions of the lockfiles
+- `packages`: npm / pip packages with the versions of the lockfiles (else the installed version)
+- `dependencies` / `dependencies_markdown`: every package with the version it was run with, whether
+  it is in the sandbox image, and the `npm install` / `pip install` line; a "Packages used" section
 - `binaries`: programs the scripts start; `sandbox.missing_tools` lists those the sandbox lacks
 - `env_vars`: variables the scripts read; they become `secrets_needed` (never their values)
 - `hosts`: hosts the code calls; they become the allowlist network
@@ -72,7 +74,12 @@ Open `/tmp/clateway-package.json` and fill in what the scanner left as TODO:
 - `agent`: name, roleTitle, persona, mission and `instructions`: the skill adapted for autonomous
   work ("the person" instead of "the user", no Claude Code specific steps, "propose actions and wait
   for approval"), with exactly how to run the entrypoint and with which input file. Clateway adds a
-  "Your sandbox" section (where the files are, what is installed) itself.
+  "Your sandbox" section (where the files are, what is installed) itself. End the instructions with
+  the scanner's `dependencies_markdown` ("Packages used": package, version, sandbox, install line).
+- `requirements.node_packages` / `python_packages`: every package the scripts import, with the exact
+  version the skill was tested with (`name@1.2.3`, `name==1.2.3`) for packages the sandbox does not
+  have. A range (`^9.0.0`) or no version: look it up (`npm ls <name>`, `pip show <name>`) and pin it.
+  Packages in the sandbox image keep their name only (the image version is used); never pin Playwright.
 - `secrets_needed`: a description and the `domains` (hosts) for each variable; `shared: true` only for a team key that colleagues' tasks may use too (default: only the agent owner's tasks)
 - `evals`: 1–3 small real runs that prove the setup end to end, e.g.
   `{ "task": "Make the platform story GIF for Acme Bakeries", "must_include": ["Acme"], "expect_files": [".gif"] }`

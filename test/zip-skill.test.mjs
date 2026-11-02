@@ -98,6 +98,24 @@ describe('zip-skill', () => {
     assert.ok(r.warnings.some((w) => /No finished package/.test(w)));
   });
 
+  it('adds DEPENDENCIES.md and a package.json with the exact versions it was run with', () => {
+    const root = mkdtempSync(join(tmpdir(), 'zip-deps-'));
+    const put = (p, c) => { mkdirSync(join(root, p, '..'), { recursive: true }); writeFileSync(join(root, p), c); };
+    put('.claude/skills/gif/SKILL.md', '# Gif\nRun `node scripts/gif.mjs`.');
+    put('scripts/gif.mjs', "import GIFEncoder from 'gif-encoder-2';\nimport { chromium } from 'playwright';");
+    put('package.json', JSON.stringify({ dependencies: { 'gif-encoder-2': '^1.0.5' } }));
+    put('node_modules/gif-encoder-2/package.json', JSON.stringify({ version: '1.0.5' }));
+    const r = zipSkill({ target: join(root, '.claude/skills/gif'), out: join(root, 'gif.zip'), root });
+    const back = readZip(readFileSync(r.zip));
+    const md = back['gif/DEPENDENCIES.md'].toString();
+    assert.match(md, /\| gif-encoder-2 \| npm \| 1\.0\.5 \| installed at start \|/);
+    assert.match(md, /\| playwright \| npm \|/);
+    assert.match(md, /npm install gif-encoder-2@1\.0\.5 playwright/);
+    assert.equal(JSON.parse(back['gif/package.json'].toString()).dependencies['gif-encoder-2'], '1.0.5');
+    assert.ok(!back['gif/requirements.txt']);
+    assert.deepEqual(r.dependencies.find((d) => d.name === 'gif-encoder-2'), { name: 'gif-encoder-2', type: 'npm', version: '1.0.5', exact: true, in_sandbox: false });
+  });
+
   it('never packs a file holding a key', () => {
     assert.equal(holdsSecret(Buffer.from('token = "ghp_' + 'a'.repeat(36) + '"')), true);
     assert.equal(holdsSecret(Buffer.from('const key = process.env.OPENAI_API_KEY')), false);

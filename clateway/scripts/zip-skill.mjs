@@ -8,6 +8,9 @@
  *  - every script and file the skill uses from elsewhere in the project (found by scan-skill.mjs),
  *    at its project path, so it lands at the same /workspace path as in a package;
  *  - other skills it calls (/other-skill), as references/<name>.md;
+ *  - DEPENDENCIES.md: every npm / pip package with the version it was run with and how to install
+ *    it, plus a package.json / requirements.txt with those versions when the folder has none
+ *    (lockfiles stay out, so this is where the versions travel);
  *  - the finished package (.clateway-skill.json, from /clateway-zip or /clateway-export), which
  *    Clateway then uses as it is; it is checked first against Clateway's package limits.
  *
@@ -22,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { scanSkill } from './scan-skill.mjs';
+import { dependenciesPackageJson, dependenciesRequirementsTxt, scanSkill } from './scan-skill.mjs';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', '.pytest_cache', '.mypy_cache', '__MACOSX', '.idea', '.vscode']);
 const SKIP_FILES = /^(\.DS_Store|Thumbs\.db|desktop\.ini|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|.*\.pyc|.*\.log|.*\.zip)$/i;
@@ -235,6 +238,7 @@ export function zipSkill({ target, pkg, out, root, scan = true }) {
   // Everything the skill uses from outside its folder, at its project path.
   const fromProject = [];
   let scanSummary = null;
+  let dependencies = [];
   if (scan) {
     const report = scanSkill(main, { root: projectRoot });
     const inside = (abs) => (dir ? abs === dir || abs.startsWith(dir + path.sep) : abs === main);
@@ -247,6 +251,17 @@ export function zipSkill({ target, pkg, out, root, scan = true }) {
       sandbox_ok: report.sandbox.ok, image: report.sandbox.image, missing_tools: report.sandbox.missing_tools,
       local_paths: report.local_paths, missing_files: report.missing_files, env_vars: report.env_vars, hosts: report.hosts,
     };
+    // Which packages, at which version: readable for people, and read by Clateway's folder import.
+    dependencies = report.dependencies;
+    const extra = (zipName, text) => {
+      if (!text || names.has(zipName)) return false;
+      names.add(zipName);
+      entries.push({ name: zipName, data: Buffer.from(text, 'utf8') });
+      return true;
+    };
+    if (dependencies.length) extra(`${top}/DEPENDENCIES.md`, `# ${name}: packages\n\n${report.dependencies_markdown}`);
+    extra(`${top}/package.json`, dependenciesPackageJson(dependencies, top));
+    extra(`${top}/requirements.txt`, dependenciesRequirementsTxt(dependencies));
     if (!report.sandbox.ok) warnings.push('The scan found local paths, missing files or programs the sandbox lacks (see scan): fix them first, or the agent fails in the sandbox.');
     for (const s of report.skipped) warnings.push(`Not packed: ${s}`);
   }
@@ -285,6 +300,7 @@ export function zipSkill({ target, pkg, out, root, scan = true }) {
     zip: path.resolve(file), bytes: zip.length, verified: true,
     files: entries.map((e) => e.name), with_package: !!pkg,
     added_from_project: fromProject, related_skills: related,
+    dependencies: dependencies.map((d) => ({ name: d.name, type: d.ecosystem, version: d.version, exact: d.exact, in_sandbox: d.sandbox_version !== null })),
     scan: scanSummary, skipped, warnings,
   };
 }
