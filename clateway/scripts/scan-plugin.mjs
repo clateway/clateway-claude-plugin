@@ -311,6 +311,16 @@ export function buildPackage(parts, opts = {}) {
     warnings.push(...report.warnings.map((w) => `${report.skill}: ${w}`));
     if (report.local_paths.length) warnings.push(`${report.skill}: ${report.local_paths.length} path(s) that only exist on this machine`);
   }
+  // A Claude Agent SDK program runs as it is (hosted mode): the lead runs its entrypoint in the
+  // sandbox, where the SDK uses Clateway's model gateway and MCP proxy.
+  const sdk = scans.some(({ report }) => Object.keys(report.packages?.npm ?? {}).includes('@anthropic-ai/claude-agent-sdk')
+    || Object.keys(report.packages?.pip ?? {}).some((n) => /^claude[-_]agent[-_]sdk$/i.test(n)));
+  if (sdk) {
+    const entry = [...scripts.values()].find((sc) => sc.entrypoint) ?? [...scripts.values()][0];
+    const cmd = entry ? `${entry.runtime === 'python' ? 'python3' : entry.runtime === 'typescript' ? 'npx tsx' : 'node'} ${entry.path.startsWith('scripts/') ? entry.path : `scripts/${entry.path}`}` : null;
+    lead.run = { mode: 'hosted_sdk', ...(cmd ? { entrypoint: cmd } : {}) };
+    warnings.push(`Uses the Claude Agent SDK: the lead runs ${cmd ?? 'the program'} unchanged in its Clateway sandbox (hosted mode). Check the entrypoint.`);
+  }
   if (scripts.size > LIMITS.scripts) warnings.push(`${scripts.size} scripts: Clateway takes at most ${LIMITS.scripts}`);
   if (files.size > LIMITS.files) warnings.push(`${files.size} files: Clateway takes at most ${LIMITS.files}`);
   if (agents.length > LIMITS.agents) warnings.push(`${agents.length} agents: Clateway takes at most ${LIMITS.agents} per team`);

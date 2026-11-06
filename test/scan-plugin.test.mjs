@@ -178,3 +178,17 @@ describe('against the platform', { skip: !existsSync(join(platform, 'supabase/fu
     assert.equal(r.ok, true, JSON.stringify(r.errors));
   });
 });
+
+describe('an Agent SDK program', () => {
+  const root = project({
+    'skills/triage/SKILL.md': '---\nname: triage\ndescription: Triage tickets\n---\nRun `python3 scripts/agent.py` with the ticket.\n',
+    'skills/triage/scripts/agent.py': 'from claude_agent_sdk import query\nimport asyncio\n',
+  });
+  const { pkg, report } = buildPackage(findParts(join(root, 'skills/triage')), { root: join(root, 'skills/triage') });
+
+  it('runs as it is: the lead gets hosted mode with the entrypoint', () => {
+    assert.equal(pkg.agents[0].run?.mode, 'hosted_sdk');
+    assert.match(pkg.agents[0].run?.entrypoint ?? '', /^python3 scripts\/agent\.py$/);
+    assert.ok(report.warnings.some((w) => /Claude Agent SDK/.test(w)));
+  });
+});

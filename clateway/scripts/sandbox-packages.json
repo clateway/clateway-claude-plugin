@@ -18,8 +18,18 @@
     "bash", "node", "npm", "pnpm", "npx", "python3", "pip", "git", "curl", "jq", "zip", "unzip",
     "chromium", "playwright", "ffmpeg", "ffprobe", "gifski", "sox", "convert", "magick", "rsvg-convert", "dot",
     "exiftool", "pdftotext", "pdftoppm", "pdfinfo", "qpdf", "gs", "pandoc", "tesseract",
-    "semgrep", "trivy", "syft"
+    "semgrep", "trivy", "syft", "claude"
   ],
+  "programs": {
+    "$comment": "Programs a package may run as they are (phase 4 of docs/BUILD_PLANS/claude-agent-import.md): Claude Code and the Agent SDK. Pinned at build time with the build arguments CLAUDE_CODE_VERSION / CLAUDE_AGENT_SDK_VERSION (default: these values). They reach models only through the Clateway gateway (ANTHROPIC_BASE_URL, set per sandbox) and MCP servers only through the managed files in /etc/claude-code.",
+    "npm": {
+      "@anthropic-ai/claude-code": "latest",
+      "@anthropic-ai/claude-agent-sdk": "latest"
+    },
+    "pip": {
+      "claude-agent-sdk": ""
+    }
+  },
   "npm": {
     "playwright": "1.55.0",
     "pdf-lib": "^1.17.1",
