@@ -60,11 +60,15 @@ Restart Claude Code afterwards.
    tools there.
 2. **Export a skill:** `/clateway-export company-gif` (any skill in `.claude/commands`, `.claude/skills` or
    `~/.claude/commands`).
-3. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
-4. **Only the scan:**
+3. **A whole plugin or team:** `/clateway-export --plugin <folder>` exports a Claude Code plugin, or a project
+   with subagents in `.claude/agents`, as one agent package: a lead agent with all the skills that delegates to the
+   subagents, the MCP servers, and a list of what is not carried over (hooks, local MCP servers). Scanner:
+   `scripts/scan-plugin.mjs <folder> --root . --package package.json`.
+4. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
+5. **Only the scan:**
    `node ~/.claude/plugins/cache/clateway/clateway/<version>/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
-   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.2.0`)
-5. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --root . --out <skill>.zip` (add
+   (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.3.0`)
+6. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --root . --out <skill>.zip` (add
    `--package <file>` to put a finished package in it, `--no-scan` to pack only the skill folder).
 
 Secrets are never put in a package: the agent's owner enters their values in Clateway after the deploy (agent →

@@ -1,5 +1,5 @@
 ---
-description: "Export a Claude Code skill as a Clateway AI agent: scan what it needs, test it in a real Clateway agent sandbox, fix, deploy. Usage: '/clateway-export company-gif' (a skill in .claude/commands or .claude/skills)."
+description: "Export a Claude Code skill, plugin or team of subagents as Clateway AI agents: scan what it needs, test it in a real Clateway agent sandbox, fix, deploy. Usage: '/clateway-export company-gif' (a skill in .claude/commands or .claude/skills), '/clateway-export --plugin <folder>' (a plugin or a project with .claude/agents)."
 ---
 
 ## Export a skill to Clateway
@@ -15,6 +15,31 @@ The Clateway MCP server of this plugin (`clateway`) must be connected: sign in w
 Not connected, or the `agents_*` tools are switched off for the company? Do steps 1–3, then pack the
 skill with `/clateway-zip` (step 5 there) and tell the person to upload the zip on clateway.ai: AI agents →
 Hire an agent → Import from Claude Code → Upload zip or file, then Test in a sandbox and Deploy agent.
+
+### 0. A whole plugin or a team of subagents
+
+When the arguments name a plugin folder (with `.claude-plugin/plugin.json`), say `--plugin`, or the project has
+subagents in `.claude/agents/` that the skill works with, export the whole thing as one **agent package**
+(format `clateway-agent-package` 2.0) instead of steps 1–3:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/scan-plugin.mjs" <plugin or project folder> --root . --package /tmp/clateway-package.json
+```
+
+It reads every skill (`skills/*/SKILL.md`), command (`commands/*.md`), subagent (`agents/*.md` with its tools and
+model), MCP server (`.mcp.json`, plugin.json `mcpServers`) and hook, scans the skills' scripts with the skill
+scanner, and writes a package in which a lead agent holds the skills and delegates to the subagents (a team).
+Secrets are named, never copied. Hooks and local (stdio) MCP servers are listed under `not_translated` with the
+reason: tell the person about each one. Then:
+
+- Fill in what the scanner could not know: a better `roleTitle` / `mission` for the lead, `evals` (replace the
+  TODO), `description` and `domains` of each secret. Keep every agent's instructions as written; only replace
+  Claude Code specific steps ("ask the user") with "propose actions and wait for approval".
+- Fix every warning of the report (paths that only exist on this machine, limits), as in step 2.
+- Continue with step 4. For a team, the dry run lists the agents: until Clateway imports whole teams, deploy and
+  test the lead by passing its key as `agent_key` (the `team.lead` of the package) and tell the person that the other agents follow once team
+  import is available. If the dry run answers that the format must be `clateway-skill-package`, the Clateway
+  version is older: export the main skill alone with steps 1–3.
 
 ### 1. Find the skill
 
