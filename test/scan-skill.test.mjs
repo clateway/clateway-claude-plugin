@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { binariesIn, codeBlocks, envVarsIn, hostsIn, jsImports, loadSandbox, packageSkeleton, pyImports, scanSkill } from '../clateway/scripts/scan-skill.mjs';
+import { binariesIn, codeBlocks, envVarsIn, hostsIn, jsImports, loadSandbox, notRoutedIn, packageSkeleton, pyImports, scanSkill } from '../clateway/scripts/scan-skill.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Clateway's platform repository next to this one (sandbox image, /company-gif skill): maintainers only, skipped otherwise.
@@ -132,5 +132,17 @@ describe('the /company-gif skill of the platform repository', { skip: !existsSyn
     assert.ok(['gifski', 'node'].every((t) => report.requirements.tools.includes(t)));
     assert.deepEqual(report.hosts, ['fonts.googleapis.com', 'fonts.gstatic.com']);
     assert.ok(report.local_paths[0].value.includes('<project>/node_modules/playwright'));
+  });
+});
+
+describe('code that is not routed through Clateway', () => {
+  it('flags MCP client libraries and other AI SDKs, not the Anthropic SDKs or an MCP server', () => {
+    assert.deepEqual(notRoutedIn("import { Client } from '@modelcontextprotocol/sdk/client/index.js';", 'node'), ['uses an MCP client library: connect to the Clateway MCP proxy instead']);
+    assert.deepEqual(notRoutedIn("const OpenAI = require('openai');", 'node'), ['calls OpenAI itself']);
+    assert.deepEqual(notRoutedIn("import Anthropic from '@anthropic-ai/sdk';\nimport { query } from '@anthropic-ai/claude-agent-sdk';", 'node'), []);
+    assert.deepEqual(notRoutedIn('from mcp import ClientSession\nfrom mcp.client.stdio import stdio_client', 'python'), ['uses an MCP client library: connect to the Clateway MCP proxy instead']);
+    assert.deepEqual(notRoutedIn('from mcp.server.fastmcp import FastMCP', 'python'), []);
+    assert.deepEqual(notRoutedIn('from mcp import FastMCP\nmcp = FastMCP("x")', 'python'), []);
+    assert.deepEqual(notRoutedIn('import openai\nimport google.generativeai as genai', 'python'), ['calls OpenAI itself', 'calls Google Gemini itself']);
   });
 });

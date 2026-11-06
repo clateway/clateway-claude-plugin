@@ -29,8 +29,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/scan-plugin.mjs" <plugin or project folder> 
 It reads every skill (`skills/*/SKILL.md`), command (`commands/*.md`), subagent (`agents/*.md` with its tools and
 model), MCP server (`.mcp.json`, plugin.json `mcpServers`) and hook, scans the skills' scripts with the skill
 scanner, and writes a package in which a lead agent holds the skills and delegates to the subagents (a team).
-Secrets are named, never copied. Hooks and local (stdio) MCP servers are listed under `not_translated` with the
-reason: tell the person about each one. Then:
+Secrets are named, never copied. Hooks are listed under `not_translated` with the reason; local (stdio) MCP
+servers run in the agent's sandbox behind the Clateway MCP proxy (name the hosts each one calls under
+`mcp_servers[].hosts`, so its changes can be approved). Code that talks to an MCP server or another AI provider
+itself (an MCP client library, the OpenAI / Gemini SDKs) is listed under `not_routed`: most companies refuse
+such a package ("Only fully routed agents"), so suggest routing it through Clateway. Tell the person about
+each one. Then:
 
 - Fill in what the scanner could not know: a better `roleTitle` / `mission` for the lead, `evals` (replace the
   TODO), `description` and `domains` of each secret. Keep every agent's instructions as written; only replace

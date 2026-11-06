@@ -302,7 +302,9 @@ export function buildPackage(parts, opts = {}) {
 
   // Scripts, files, requirements and secrets of every skill, merged once.
   const scripts = new Map(), files = new Map();
+  const notRouted = [];
   for (const { report } of scans) {
+    for (const n of report.not_routed ?? []) if (!notRouted.some((x) => x.file === n.file && x.reason === n.reason)) notRouted.push(n);
     const sk = packageSkeleton(report, root, key);
     for (const s of sk.scripts) scripts.set(s.path, s);
     for (const f of sk.files) files.set(f.path, f);
@@ -338,6 +340,7 @@ export function buildPackage(parts, opts = {}) {
     ...(skills.length ? { skills } : {}),
     ...(servers.length ? { mcp_servers: servers } : {}),
     ...(notTranslated.length ? { not_translated: notTranslated } : {}),
+    ...(notRouted.length ? { not_routed: notRouted } : {}),
     ...(scripts.size ? { scripts: [...scripts.values()] } : {}),
     ...(files.size ? { files: [...files.values()] } : {}),
     ...(requirements && (scripts.size || files.size) ? { requirements } : {}),
@@ -349,7 +352,7 @@ export function buildPackage(parts, opts = {}) {
     report: {
       kind: parts.kind, key, agents: agents.map((a) => a.key), team: !!pkg.team, skills: skills.map((s) => s.key),
       mcp_servers: servers.map((s) => `${s.key} (${s.transport})`), scripts: scripts.size, files: files.size,
-      secrets_needed: [...secretByName.keys()], not_translated: notTranslated, warnings,
+      secrets_needed: [...secretByName.keys()], not_translated: notTranslated, not_routed: notRouted, warnings,
       ok: !warnings.some((w) => /takes at most|only exist on this machine|not valid JSON/.test(w)),
     },
   };

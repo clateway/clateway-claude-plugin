@@ -121,6 +121,48 @@ export function pyImports(src) {
   return { modules: [...mods].filter(Boolean), relative: [...rel] };
 }
 
+/**
+ * Code that talks to an MCP server or an AI provider itself instead of through Clateway: an MCP
+ * client library, or an AI SDK that does not use the Clateway model gateway (Anthropic's SDKs and
+ * the Agent SDK do: they follow ANTHROPIC_BASE_URL). Clateway refuses such a package while the
+ * company has "Only fully routed agents" on. Pure.
+ */
+const NOT_ROUTED_JS = [
+  [/^@modelcontextprotocol\/sdk\/client\b|^@modelcontextprotocol\/sdk$/, 'uses an MCP client library: connect to the Clateway MCP proxy instead'],
+  [/^openai$/, 'calls OpenAI itself'],
+  [/^@google\/(generative-ai|genai)$/, 'calls Google Gemini itself'],
+  [/^@mistralai\/mistralai$/, 'calls Mistral itself'],
+  [/^cohere-ai$/, 'calls Cohere itself'],
+  [/^@aws-sdk\/client-bedrock-runtime$/, 'calls Amazon Bedrock itself'],
+];
+const NOT_ROUTED_PY = [
+  [/^mcp$/, 'uses an MCP client library: connect to the Clateway MCP proxy instead'],
+  [/^openai$/, 'calls OpenAI itself'],
+  [/^google\.generativeai$|^google\.genai$/, 'calls Google Gemini itself'],
+  [/^mistralai$/, 'calls Mistral itself'],
+  [/^cohere$/, 'calls Cohere itself'],
+];
+export function notRoutedIn(src, kind) {
+  const out = new Set();
+  if (kind === 'node' || kind === 'typescript') {
+    const specs = [...src.matchAll(/(?:\bfrom\s+|\bimport\(\s*|\brequire\(\s*|\bimport\s+)['"]([^'"]+)['"]/g)].map((m) => m[1]);
+    for (const spec of specs) for (const [re, why] of NOT_ROUTED_JS) if (re.test(spec)) out.add(why);
+  } else if (kind === 'python') {
+    const mods = [
+      ...[...src.matchAll(/^\s*import\s+([\w.]+)/gm)].map((m) => m[1]),
+      ...[...src.matchAll(/^\s*from\s+([\w.]+)\s+import\b/gm)].map((m) => m[1]),
+    ];
+    for (const m of mods) {
+      // The mcp server library (FastMCP / mcp.server) is a server, which Clateway runs behind its proxy.
+      if (/^mcp\.server\b/.test(m)) continue;
+      const top = m.split('.').slice(0, 2).join('.');
+      for (const [re, why] of NOT_ROUTED_PY) if (re.test(m.split('.')[0]) || re.test(top)) out.add(why);
+    }
+    if (/\bfrom\s+mcp\s+import\s+[^\n]*\bFastMCP\b/.test(src) && !/\bClientSession\b|\bstdio_client\b|\bsse_client\b|streamablehttp_client/.test(src)) out.delete('uses an MCP client library: connect to the Clateway MCP proxy instead');
+  }
+  return [...out];
+}
+
 /** Programs a script starts. Pure. */
 export function binariesIn(src, kind) {
   const out = new Set();
@@ -308,7 +350,7 @@ export function scanSkill(skillPath, opts = {}) {
   const report = {
     skill: posix(relative(root, resolve(skillPath))),
     scripts: [], files: [], packages: { npm: {}, pip: {} }, binaries: [], env_vars: [], hosts: [],
-    local_paths: [], missing_files: [], skipped: [], warnings: [],
+    local_paths: [], missing_files: [], skipped: [], warnings: [], not_routed: [],
   };
   const versions = lockVersions([...new Set([dirname(resolve(skillPath)), root])]);
   const seen = new Set();
@@ -325,7 +367,11 @@ export function scanSkill(skillPath, opts = {}) {
 
   const binaries = new Set(), env = new Set(), npm = new Set(), pip = new Set(), hosts = new Set(hostsIn(skillText));
   // Code written inline in the skill (fenced blocks) runs too: its imports, programs and variables count.
+  const flagRouting = (src, kind, where) => {
+    for (const reason of notRoutedIn(src, kind)) if (!report.not_routed.some((n) => n.file === where && n.reason === reason)) report.not_routed.push({ file: where, reason });
+  };
   const scanCode = (src, kind, where, offset = 0, text = src) => {
+    flagRouting(src, kind, where);
     binariesIn(src, kind).forEach((b) => binaries.add(b));
     envVarsIn(src, kind).forEach((e) => env.add(e));
     hostsIn(src).forEach((h) => hosts.add(h));
@@ -363,6 +409,7 @@ export function scanSkill(skillPath, opts = {}) {
     entry ??= rel;
     report.scripts.push({ path: rel, runtime: kind, size, entrypoint: rel === entry });
     const src = readFileSync(abs, 'utf8');
+    flagRouting(src, kind, rel);
     binariesIn(src, kind).forEach((b) => binaries.add(b));
     envVarsIn(src, kind).forEach((e) => env.add(e));
     hostsIn(src).forEach((h) => hosts.add(h));
@@ -434,6 +481,7 @@ export function scanSkill(skillPath, opts = {}) {
   if (fullImage) report.warnings.push('Uses LibreOffice (soffice): runs only where the platform offers the full sandbox image. Convert with pandoc, docx / pptxgenjs or python-docx / python-pptx instead if you can.');
   if (missingTools.length) report.warnings.push(`Not in the Clateway sandbox and not installable by the agent: ${missingTools.join(', ')}. Use another tool or an npm / pip package that bundles it.`);
   if (report.local_paths.length) report.warnings.push('Paths that only exist on this machine: make them inputs or files in the package.');
+  if (report.not_routed.length) report.warnings.push(`Not routed through Clateway: ${report.not_routed.map((n) => `${n.file} ${n.reason}`).join('; ')}. Companies with "Only fully routed agents" on refuse this package.`);
   const unpinned = report.dependencies.filter((d) => d.sandbox_version === null && !d.exact).map((d) => d.name);
   if (unpinned.length) report.warnings.push(`Installed at sandbox start without an exact version: ${unpinned.join(', ')}. Pin the version the skill was tested with (npm ls <name> / pip show <name>) in requirements.`);
   if (report.hosts.length && (npmToInstall.length || pipToInstall.length)) report.warnings.push('The code reaches hosts and also needs packages installed: list the packages so the image or the agent settings carry them, or add the registry hosts.');
