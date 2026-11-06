@@ -7,7 +7,7 @@
  *
  *   - skills/<name>/SKILL.md and commands/<name>.md  → package skills (instructions in full)
  *   - agents/<name>.md (subagents)                    → agents of a team, with their tools and model tier
- *   - .mcp.json / plugin.json mcpServers              → mcp_servers (http or stdio), their secrets by name only
+ *   - .mcp.json / plugin.json mcpServers              → mcp_servers (http or stdio; a local server's secrets as env names), secrets by name only
  *   - hooks (hooks/hooks.json, settings.json)         → listed under not_translated, never dropped silently
  *   - scripts and files the skills use                → scanned with scan-skill.mjs and merged
  *
@@ -107,12 +107,22 @@ export function mcpServersFrom(config, where = '.mcp.json') {
     if (http && !/^https:\/\//i.test(server.url)) warnings.push(`MCP server "${name}" (${where}) is not on https (${server.url || 'no url'}): Clateway only calls https servers`);
     servers.push(server);
     const named = new Set();
+    // A local server reads its secrets from environment variables: the secret is named after the
+    // variable it reads, and Clateway's workspace hands it over under that name (mcp_servers[].env).
+    const envNames = new Set();
     for (const [k, v] of Object.entries(def.env ?? {})) {
       const refs = varsIn(v);
-      if (refs.length) refs.forEach((r) => named.add(r));
-      else if (/\$\{?[A-Z_]/.test(String(v))) { /* only Claude Code's own variables */ }
-      else { named.add(k); warnings.push(`MCP server "${name}" has a literal value for ${k} in ${where}: it is not copied; enter it in Clateway as a secret`); }
+      if (refs.length) {
+        if (http) refs.forEach((r) => named.add(r));
+        else if (/^[A-Z][A-Z0-9_]{1,63}$/.test(k)) { named.add(k); envNames.add(k); }
+      } else if (/\$\{?[A-Z_]/.test(String(v))) { /* only Claude Code's own variables */ }
+      else {
+        named.add(k);
+        if (!http && /^[A-Z][A-Z0-9_]{1,63}$/.test(k)) envNames.add(k);
+        warnings.push(`MCP server "${name}" has a literal value for ${k} in ${where}: it is not copied; enter it in Clateway as a secret`);
+      }
     }
+    if (!http && envNames.size) server.env = [...envNames];
     for (const [h, v] of Object.entries(def.headers ?? {})) {
       const refs = varsIn(v);
       if (refs.length) refs.forEach((r) => named.add(r));
@@ -310,7 +320,9 @@ export function buildPackage(parts, opts = {}) {
     const prev = secretByName.get(s.name);
     secretByName.set(s.name, prev ? { ...prev, domains: [...new Set([...(prev.domains ?? []), ...(s.domains ?? [])])], description: prev.description || s.description } : s);
   }
-  for (const s of servers.filter((x) => x.transport === 'stdio')) notTranslated.push({ item: `MCP server ${s.key} (${[s.command, ...(s.args ?? [])].join(' ')})`, reason: 'local MCP servers run behind the Clateway MCP proxy, which is not available yet' });
+  for (const s of servers.filter((x) => x.transport === 'stdio')) {
+    warnings.push(`Local MCP server "${s.key}" (${[s.command, ...(s.args ?? [])].join(' ')}) runs in the agent's sandbox behind the Clateway MCP proxy: list the hosts it calls as mcp_servers[].hosts, or its tools that change something outside the sandbox are not run`);
+  }
 
   const pkg = {
     format: AGENT_PACKAGE_FORMAT,

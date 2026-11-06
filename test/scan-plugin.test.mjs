@@ -56,6 +56,7 @@ describe('pieces', () => {
     });
     assert.deepEqual(r.servers.map((s) => [s.key, s.transport]), [['crm', 'http'], ['notes', 'stdio'], ['plain', 'http']]);
     assert.deepEqual(r.secrets.map((s) => s.name), ['CRM_TOKEN', 'API_KEY']);
+    assert.deepEqual(r.servers[1].env, ['API_KEY']);
     assert.deepEqual(r.secrets[0].domains, ['mcp.crm.example.org']);
     assert.ok(!JSON.stringify(r).includes('sk-live-123'));
     assert.ok(r.warnings.some((w) => /literal value for API_KEY/.test(w)));
@@ -124,7 +125,8 @@ describe('a plugin with skills, subagents, an MCP server and hooks', () => {
     assert.deepEqual(pkg.secrets_needed.map((s) => s.name).sort(), ['CRM_TOKEN', 'SCORING_KEY']);
     const nt = pkg.not_translated.map((n) => n.item).join('\n');
     assert.match(nt, /hook PreToolUse:Bash/);
-    assert.match(nt, /MCP server notes \(node mcp\/notes\.js\)/);
+    assert.doesNotMatch(nt, /MCP server notes/);
+    assert.match(report.warnings.join('\n'), /Local MCP server "notes".*Clateway MCP proxy/);
     assert.deepEqual(report.agents, ['lead', 'researcher', 'writer']);
     assert.equal(report.team, true);
   });
