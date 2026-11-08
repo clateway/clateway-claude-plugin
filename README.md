@@ -18,6 +18,11 @@ skills it calls (as `references/<name>.md`) and the finished package, checked ag
 back to verify. Files holding something like a key are never packed. Upload it yourself: clateway.ai → AI agents → Hire an agent → Import from Claude
 Code → **Upload zip or file**, then **Test in a sandbox** and **Deploy agent**.
 
+`/clateway-agent pull <agent>` works on an agent that is already on Clateway, as a folder on your computer
+(`agent.yaml`, `instructions.md`, `evals.yaml`, `scripts/`, `files/`): change it here, then `push` into your draft,
+`test` it in a real sandbox and `publish` it, with `diff`, `log` and `rollback <n>`. Only agents you may edit;
+agents protected by their author never show. Nothing runs until you publish.
+
 No plugin at all? Zip the skill folder (with its `SKILL.md`, scripts and files) and upload that: Clateway reads the
 instructions, scripts, files, packages, hosts and secrets from it. The plugin's scan makes a skill portable first
 (local paths, inline code, programs the sandbox lacks), so its agents fail less often.
@@ -60,11 +65,14 @@ Restart Claude Code afterwards.
    tools there.
 2. **Export a skill:** `/clateway-export company-gif` (any skill in `.claude/commands`, `.claude/skills` or
    `~/.claude/commands`).
-3. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
-4. **Only the scan:**
+3. **Change an agent that is on Clateway:** `/clateway-agent pull Ledger Clerk`, edit the folder, then in it
+   `/clateway-agent push`, `/clateway-agent test` and `/clateway-agent publish -m "What changed"`. Needs the
+   `agents_workspace_*` tools switched on and the AI agents right in your company.
+4. **Without signing in:** `/clateway-zip company-gif` writes `company-gif.zip` to upload on clateway.ai.
+5. **Only the scan:**
    `node ~/.claude/plugins/cache/clateway/clateway/<version>/scripts/scan-skill.mjs .claude/commands/<skill>.md --root . --package package.json`
    (the plugin's installed folder; `<version>` is the one `claude plugin list` shows, for example `1.2.0`)
-5. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --root . --out <skill>.zip` (add
+6. **Only the zip:** `node …/scripts/zip-skill.mjs .claude/skills/<skill> --root . --out <skill>.zip` (add
    `--package <file>` to put a finished package in it, `--no-scan` to pack only the skill folder).
 
 Secrets are never put in a package: the agent's owner enters their values in Clateway after the deploy (agent →

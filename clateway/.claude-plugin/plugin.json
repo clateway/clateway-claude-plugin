@@ -1,8 +1,16 @@
 {
   "name": "clateway",
-  "version": "1.2.0",
-  "description": "Turn your Claude Code skills into Clateway AI agents: scan what a skill really needs, test it in a real Clateway agent sandbox and deploy it, or pack it as a zip to upload on clateway.ai.",
-  "author": { "name": "Clateway", "url": "https://clateway.ai" },
+  "version": "1.3.0",
+  "description": "Turn your Claude Code skills into Clateway AI agents: scan what a skill really needs, test it in a real Clateway agent sandbox and deploy it, or pack it as a zip to upload on clateway.ai. Work on an agent that is already on Clateway as a folder: pull, push, test, publish.",
+  "author": {
+    "name": "Clateway",
+    "url": "https://clateway.ai"
+  },
   "homepage": "https://clateway.ai/ai-agents",
-  "keywords": ["clateway", "agents", "export", "skills"]
+  "keywords": [
+    "clateway",
+    "agents",
+    "export",
+    "skills"
+  ]
 }
