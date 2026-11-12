@@ -82,8 +82,8 @@
     "adm-zip": "^0.5.16",
     "exifr": "^7.1.3",
     "@anthropic-ai/sdk": "^1.6.0",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.318",
-    "@anthropic-ai/claude-code": "^2.1.318",
+    "@anthropic-ai/claude-agent-sdk": "0.3.321",
+    "@anthropic-ai/claude-code": "2.1.321",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "typescript": "^5.9.3",
     "tsx": "^4.23.15",
@@ -133,7 +133,7 @@
     "requests": ">=2.32",
     "semgrep": "1.101.0",
     "anthropic": ">=2.6",
-    "claude-agent-sdk": ">=0.2",
+    "claude-agent-sdk": "0.2.180",
     "mcp": ">=2.3"
   },
   "editor": {
