@@ -1,5 +1,5 @@
 {
-  "$comment": "What the agent sandbox images (Dockerfile) install: everything here goes into both the standard and the full image, \"office\" only into the full one. Source for SANDBOX_IMAGE_TOOLS / SANDBOX_NODE_PACKAGES / SANDBOX_PYTHON_PACKAGES in supabase/functions/_shared/ai-workforce/sandbox.ts (tests/unit/ai-workforce/sandboxImage.test.ts keeps them in step) and for the Clateway Claude Code plugin's scanner. Node packages are global (NODE_PATH) and linked into /workspace/node_modules at sandbox start, so they work without network.",
+  "$comment": "What the agent sandbox images (Dockerfile) install: everything here goes into all three images (standard, full, engineering), \"office\" only into the full one and \"engineering\" only into the engineering one. Source for SANDBOX_IMAGE_TOOLS / SANDBOX_NODE_PACKAGES / SANDBOX_PYTHON_PACKAGES in supabase/functions/_shared/ai-workforce/sandbox.ts (tests/unit/ai-workforce/sandboxImage.test.ts keeps them in step) and for the Clateway Claude Code plugin's scanner. Node packages are global (NODE_PATH) and linked into /workspace/node_modules at sandbox start, so they work without network.",
   "apt": [
     "git", "curl", "ca-certificates", "jq", "unzip", "zip",
     "ffmpeg", "sox", "libsox-fmt-mp3", "imagemagick", "librsvg2-bin", "graphviz", "libimage-exiftool-perl",
@@ -135,6 +135,67 @@
     "anthropic": ">=2.6",
     "claude-agent-sdk": "0.2.180",
     "mcp": ">=2.3"
+  },
+  "engineering": {
+    "$comment": "Only in the engineering image (Dockerfile build argument IMAGE_VARIANT=engineering, runtime clateway_workspace_eng), for agents that design machines: parametric CAD with CadQuery and build123d on one OpenCascade (cadquery-ocp-novtk 7.9: build123d 0.12 and CadQuery 2.8 both run on it; CadQuery is installed without its viewer dependencies, see pip_no_deps), meshes and glTF / GLB export, FEA with CalculiX, discrete-event throughput with SimPy, plant models as FMUs (FMPy runs them, PythonFMU builds them), IEC 61131-3 PLC software with OpenPLC v3 (matiec iec2c compiler, runtime and its web editor), OPC UA with asyncua, and CycloneDX SBOMs. All of it works without internet.",
+    "apt": [
+      "calculix-ccx",
+      "build-essential", "pkg-config", "bison", "flex", "autoconf", "automake", "libtool", "make", "cmake",
+      "sqlite3", "python3-venv", "python3-dev", "openssl", "libssl-dev"
+    ],
+    "pip": {
+      "build123d": "0.12.0",
+      "cadquery-ocp-novtk": "7.9.3.1.1",
+      "trimesh": "5.2.1",
+      "pygltflib": "1.16.5",
+      "manifold3d": "3.5.5",
+      "tetgen": "0.8.4",
+      "meshio": "5.3.5",
+      "ezdxf": "1.4.5",
+      "scipy": "1.18.1",
+      "networkx": "3.7",
+      "simpy": "4.1.2",
+      "fmpy": "0.3.32",
+      "pythonfmu": "0.7.0",
+      "asyncua": "2.1.0",
+      "cyclonedx-bom": "8.0.1"
+    },
+    "pip_no_deps": {
+      "$comment": "CadQuery 2.8 without its declared dependencies on VTK, casadi and trame (its viewer, the constraint solver and the notebook widgets): with them it would bring a second OpenCascade with VTK (about 250 MB) that breaks build123d and does not fit the image. clateway_cq_shim.py (engineering/) lets CadQuery load without VTK and casadi and refuses their use with a plain error; modelling and STEP, STL, glTF and DXF export work. Checked by running the SCM-600 R2 CadQuery model: the same 84 parts, masses and EBOM byte for byte, and the same meshes (face counts, volumes, bounds).",
+      "cadquery": "2.8.0",
+      "multimethod": "1.12",
+      "typish": "1.9.3",
+      "path": "17.1.1",
+      "runtype": "0.5.3",
+      "nlopt": "2.11.0"
+    },
+    "constraints": {
+      "$comment": "Versions of packages the standard part already has that this part must move: build123d's materials (threejs-materials) need pillow 12.2, moviepy pins pillow < 12 only as a precaution (its clips and GIFs were checked on 12.2 in this image).",
+      "pillow": "12.2.0"
+    },
+    "npm": {
+      "@gltf-transform/cli": "4.5.1"
+    },
+    "openplc": {
+      "$comment": "OpenPLC v3 (github.com/thiagoralves/OpenPLC_v3, GPL-3.0) at a pinned commit, installed with its own installer (target docker) into /opt/openplc, root-owned. The openplc command copies its webserver folder into /workspace/openplc on first use and runs it as the sandbox user: the web editor on ui_port, Modbus TCP on modbus_port (not 502, which needs root). openplc-ui puts the editor behind a preview link (it keeps the login itself and rewrites the editor's root links), opcua-bridge publishes the PLC's located variables as an OPC UA server.",
+      "repository": "https://github.com/thiagoralves/OpenPLC_v3",
+      "commit": "b5d41356dab4aeadca0dd7ca64ba542f870b595d",
+      "port": 8081,
+      "ui_port": 8082,
+      "modbus_port": 5020,
+      "opcua_port": 4840
+    },
+    "pythonfmu_export": {
+      "$comment": "PythonFMU ships its FMU library (libpythonfmu-export.so) for x86 Linux only; the image compiles it from this source for ARM64, the commit of the pythonfmu release above (tag v0.7.0).",
+      "repository": "https://github.com/NTNU-IHB/PythonFMU",
+      "commit": "fab861ae48fbaaa75c37c3aca76c92fc0e6399c0"
+    },
+    "tools": ["ccx", "iec2c", "openplc", "openplc-ui", "opcua-bridge", "gltf-transform", "cyclonedx-py"],
+    "leave_out": {
+      "$comment": "What the engineering image leaves out of the standard set, to stay under AgentCore's 2,048 MB image limit: VS Code in the browser (code-server; OpenPLC brings its own editor), the Semgrep scanner and its rules, the Trivy database (the trivy command stays and needs a network for it), and the VS Code extension tooling.",
+      "tools": ["code-server", "semgrep", "vsce", "yo"],
+      "npm": ["@types/vscode", "@vscode/vsce", "yo", "generator-code", "@vscode/test-cli", "@vscode/test-electron"]
+    }
   },
   "editor": {
     "$comment": "VS Code in the browser (code-server, standalone release with its own Node), in both images. Pinned and checked against the SHA-256 of the release tarballs. Started only by the workspace server (op start_editor) for the person a task acts for, bound to 127.0.0.1, no extensions, no marketplace, no telemetry; reached through the preview proxy (ai-workforce-preview /e/<token>/).",
